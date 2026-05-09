@@ -20,3 +20,8 @@ class PointLight:
 
     def position(self):
         return self.pos
+    
+
+class AreaLight:
+    pass
+

@@ -39,3 +39,4 @@ class HitRecord:
         self.point = point       # (N, 3)
         self.normal = normal     # (N, 3)
         self.materials = materials       # (N, 3)
+

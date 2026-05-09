@@ -10,13 +10,10 @@ class Camera:
         self.img_width = img_width
         self.img_height = img_height
 
-        # Convert all for torch tensors
         self.eye = torch.as_tensor(eye, device=device, dtype=torch.float32)
         self.look_at = torch.as_tensor(look_at, device=device, dtype=torch.float32)
         self.up = torch.as_tensor(up, device=device, dtype=torch.float32)
-        print(f"Tipo do eye: {type(self.eye)}")
-        print(f"Tipo do look_at: {type(self.look_at)}")
-        
+
         aspect_ratio = img_height / img_width
 
         self.su = 2 * math.tan(math.radians(fov) / 2)
