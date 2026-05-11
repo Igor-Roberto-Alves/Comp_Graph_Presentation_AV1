@@ -16,9 +16,10 @@ def render_colors(scene, ray, hit_record):
     N = ray.ori.shape[0]
     device = ray.ori.device
     final_colors = torch.zeros((N, 3), device=device)
-    count = 0
-    for i, material in tqdm(enumerate(scene.materials), desc = f"{count} now"):
-        count += 1
+    
+    # Removido o tqdm daqui para não poluir o terminal, 
+    # pois agora a barra de progresso principal será a dos chunks
+    for i, material in enumerate(scene.materials):
         material_id = i + 1
         mat_mask = (hit_record.hit_mask == material_id)
         if mat_mask.any():
@@ -73,8 +74,6 @@ def main(args):
             device=device,
         )
 
-
-    
     camera = scene.camera
     lk_at = camera.look_at
     print(f"Câmera original: {camera}")
@@ -82,34 +81,51 @@ def main(args):
     if args.theta != 0 or args.phi != 0:
         camera.eye = rotate_cam(camera.eye, args.theta, args.phi)
         
-
     new_camera = Camera(camera.eye, lk_at, camera.up, camera.fov, camera.img_width, camera.img_height, camera.device)
-    with torch.no_grad():
-        final_colors = torch.zeros((camera.img_height * camera.img_width, 3), device=device)
-        for _ in range(args.num_samples):
+    
+    total_pixels = camera.img_height * camera.img_width
+    chunk_size = args.chunk_size
 
-            print("Gerando raios...")
+    with torch.no_grad():
+        final_colors = torch.zeros((total_pixels, 3), device=device)
+        bg_color = torch.tensor(scene.background, device=device)
+
+        for sample in range(args.num_samples):
+
+            print(f"\nGerando raios da amostra {sample + 1}/{args.num_samples}...")
+            # Gera todos os raios (apenas as origens e direções ocupam pouca memória)
             rays = new_camera.generate_all_rays(randomize=(args.num_samples > 1))
 
-            print("Calculando interseções (Hit)...")
-            hit_rec = scene.hit(rays)
+            print("Calculando interseções e cores por chunks...")
+            # O tqdm agora itera sobre os chunks da imagem
+            for i in tqdm(range(0, total_pixels, chunk_size), desc=f"Amostra {sample+1}"):
+                end = min(i + chunk_size, total_pixels)
+                
+                # Fatiar raios para o chunk atual
+                chunk_ori = rays.ori[i:end]
+                chunk_dir = rays.dir[i:end]
+                ray_chunk = Ray(chunk_ori, chunk_dir)
 
-            current_colors = render_colors(scene, rays, hit_rec)
-            bg_color = torch.tensor(scene.background, device=device)
-            miss_mask = (hit_rec.hit_mask == 0)
-            current_colors[miss_mask] = bg_color
-            final_colors += current_colors
+                # Processar as interseções apenas para o lote
+                hit_rec_chunk = scene.hit(ray_chunk)
 
-    
+                # Computar as cores do lote
+                current_colors_chunk = render_colors(scene, ray_chunk, hit_rec_chunk)
+                
+                # Aplicar a cor de fundo nos raios que não atingiram nada
+                miss_mask = (hit_rec_chunk.hit_mask == 0)
+                current_colors_chunk[miss_mask] = bg_color
+                
+                # Acumular no tensor final
+                final_colors[i:end] += current_colors_chunk
 
+        # Média das amostras para Anti-Aliasing
         final_colors /= args.num_samples
-    
-
 
         # 3. Limitar os valores das cores entre 0.0 e 1.0 (evita que luzes fortes estourem a imagem)
         final_colors = torch.clamp(final_colors, 0.0, 1.0)
 
-        print("Processando a imagem final...")
+        print("\nProcessando a imagem final...")
         # 4. Redimensionar o Tensor (N, 3) para o formato de imagem (Altura, Largura, 3)
         img_height = camera.img_height
         img_width = camera.img_width
@@ -120,12 +136,11 @@ def main(args):
 
         # 6. Salvar a imagem no disco
         img = Image.fromarray(image_np)
-        output_filename = f"{args.output}.png"
+        output_filename = f"{args.output}.png" # Ajustado para .png
         img.save(output_filename)
         
         print(f"Renderização concluída com sucesso! Imagem salva como '{output_filename}'")
 
-# Certifique-se de ter o bloco if __name__ == "__main__": no final do arquivo
 
 if __name__ == "__main__":
 
@@ -134,10 +149,10 @@ if __name__ == "__main__":
     parser.add_argument('-n', '--num_samples', type=int, help='Number of samples per pixel for anti-aliasing', default=1)
     parser.add_argument('-l', '--lens_samples', type=int, help='Number of samples on the lens for depth of field', default=1)
     parser.add_argument('-j', '--num_jobs', type=int, help='Number of parallel jobs for rendering', default=4)
-    parser.add_argument('-o', '--output', type=str, help='Output image file name', default='output.png')
+    parser.add_argument('-o', '--output', type=str, help='Output image file name (without extension)', default='output')
     parser.add_argument('-t', '--theta', type=float, help='Camera rotation angle around the Y-axis', default=0.0)
     parser.add_argument('-p', '--phi', type=float, help='Camera rotation angle around the X-axis', default=0.0)
     parser.add_argument('-d', '--device', type=str, help='Device to use for rendering (cpu or cuda)', default='cuda' if torch.cuda.is_available() else 'cpu')
+    parser.add_argument('-c', '--chunk_size', type=int, help='Número de raios computados por lote (evita Out of Memory)', default=32768)
     args = parser.parse_args()
     main(args)
- 

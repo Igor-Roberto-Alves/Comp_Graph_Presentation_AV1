@@ -20,6 +20,9 @@ class Ray:
         
         # K is a tensor (N, 1)
         return self.ori + k * self.dir
+    
+    def __getitem__(self, indice):
+        return self.ori[indice], self.dir[indice]
 
 
         
