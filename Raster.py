@@ -18,6 +18,9 @@ def render_colors(scene, ray, hit_record):
     device = ray.ori.device
     final_colors = torch.zeros((N, 3), device=device)
     count = 0
+    for material in scene.objects:
+        
+
     for i, material in tqdm(enumerate(scene.materials), desc=f"{count} now"):
         count += 1
         material_id = i + 1
